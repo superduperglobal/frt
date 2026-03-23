@@ -1,44 +1,11 @@
 """
 ================================================================================
 Script Name   : attendance_app.py
-Version       : v1.0
-Author        : ChatGPT
-Created On    : 23-03-2026
-
+Version       : v1.1
 ================================================================================
-FUNCTIONAL OVERVIEW
---------------------------------------------------------------------------------
-This is a mobile-friendly Attendance Capture Web App with:
-
-1. User Input Fields:
-   - Name
-   - Employee ID
-   - Remarks
-
-2. Auto Capture:
-   - Location (Latitude, Longitude via browser)
-   - Timestamp (server-side)
-
-3. Image Capture:
-   - Camera upload from mobile device
-
-4. Storage:
-   - Data → SQLite database
-   - Images → /uploads folder
-
-5. Security:
-   - File type validation
-   - Size control
-   - Server-side timestamp
-
-================================================================================
-VERSION HISTORY
---------------------------------------------------------------------------------
-v1.0 (23-03-2026)
-- Initial version
-- Form + Location + Camera + Storage implemented
-- SQLite integration added
-- Render-ready deployment
+FIXES IN v1.1
+- Bind to dynamic PORT (Render requirement)
+- Prevent image overwrite using timestamp-based naming
 ================================================================================
 """
 
@@ -48,9 +15,6 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 import sqlite3
 
-# ------------------------------------------------------------------------------
-# CONFIGURATION
-# ------------------------------------------------------------------------------
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 DB_FILE = 'attendance.db'
@@ -62,7 +26,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.secret_key = 'secret_key_change_this'
 
 # ------------------------------------------------------------------------------
-# DATABASE INITIALIZATION
+# DB INIT
 # ------------------------------------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -85,13 +49,9 @@ def init_db():
 init_db()
 
 # ------------------------------------------------------------------------------
-# UTIL FUNCTIONS
-# ------------------------------------------------------------------------------
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ------------------------------------------------------------------------------
-# HTML TEMPLATE (INLINE)
 # ------------------------------------------------------------------------------
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -136,8 +96,6 @@ navigator.geolocation.getCurrentPosition(function(position) {
 """
 
 # ------------------------------------------------------------------------------
-# ROUTES
-# ------------------------------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
@@ -154,7 +112,10 @@ def index():
             flash("Invalid image file")
             return redirect(request.url)
 
-        filename = secure_filename(file.filename)
+        # UNIQUE FILE NAME FIX
+        timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+        filename = secure_filename(f"{emp_id}_{timestamp_str}.jpg")
+
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
 
@@ -177,7 +138,6 @@ def index():
     return render_template_string(HTML_PAGE)
 
 # ------------------------------------------------------------------------------
-# RUN
-# ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
