@@ -1,16 +1,18 @@
 """
 ================================================================================
 Script Name   : attendance_app.py
-Version       : v1.1
+Version       : v1.3
 ================================================================================
-FIXES IN v1.1
-- Bind to dynamic PORT (Render requirement)
-- Prevent image overwrite using timestamp-based naming
+ENHANCEMENTS:
+- Visible success confirmation
+- Better UI feedback
+- Image size control
+- Improved reliability
 ================================================================================
 """
 
 import os
-from flask import Flask, request, render_template_string, redirect, url_for, flash
+from flask import Flask, request, render_template_string
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import sqlite3
@@ -23,10 +25,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.secret_key = 'secret_key_change_this'
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB
 
-# ------------------------------------------------------------------------------
-# DB INIT
 # ------------------------------------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -64,6 +64,12 @@ HTML_PAGE = """
 
 <h2>📍 Attendance Capture</h2>
 
+{% if message %}
+<div style="padding:10px; background:#d4edda; color:#155724; margin-bottom:15px;">
+    {{ message }}
+</div>
+{% endif %}
+
 <form method="POST" enctype="multipart/form-data">
 
     <label>Name:</label><br>
@@ -98,6 +104,8 @@ navigator.geolocation.getCurrentPosition(function(position) {
 # ------------------------------------------------------------------------------
 @app.route("/", methods=["GET", "POST"])
 def index():
+    message = None
+
     if request.method == "POST":
 
         name = request.form.get("name")
@@ -109,14 +117,13 @@ def index():
         file = request.files.get("photo")
 
         if not file or not allowed_file(file.filename):
-            flash("Invalid image file")
-            return redirect(request.url)
+            message = "Invalid image file"
+            return render_template_string(HTML_PAGE, message=message)
 
-        # UNIQUE FILE NAME FIX
         timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
         filename = secure_filename(f"{emp_id}_{timestamp_str}.jpg")
-
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
         file.save(filepath)
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -132,10 +139,9 @@ def index():
         conn.commit()
         conn.close()
 
-        flash("Attendance Submitted Successfully")
-        return redirect(url_for("index"))
+        message = f"✅ Attendance recorded for {name} at {timestamp}"
 
-    return render_template_string(HTML_PAGE)
+    return render_template_string(HTML_PAGE, message=message)
 
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
