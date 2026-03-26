@@ -54,11 +54,7 @@ HTML_PAGE = """
 <h2>📍 Attendance Capture</h2>
 <p id="loc_status"></p>
 
-{% if message %}
-<div style="background:#d4edda;padding:10px;">{{message}}</div>
-{% endif %}
-
-<form method="POST">
+<form method="POST" onsubmit="disableSubmit()">
 
 Name:<br><input type="text" name="name" required><br><br>
 Employee ID:<br><input type="text" name="emp_id" required><br><br>
@@ -72,9 +68,27 @@ Remarks:<br><input type="text" name="remarks"><br><br>
 <input type="hidden" name="longitude" id="longitude">
 
 <button type="submit" id="submitBtn" disabled>Submit</button>
+
+<div id="msg_box" style="margin-top:10px;">
+{% if message %}
+<div style="padding:10px;
+            background:{{'green' if '✅' in message else 'red'}};
+            color:white;">
+{{message}}
+{% if '❌' in message %}
+<br>👉 Please retry ensuring face is centered and move slightly
+{% endif %}
+</div>
+{% endif %}
+</div>
+
 </form>
 
 <script>
+function disableSubmit() {
+    document.getElementById("submitBtn").disabled = true;
+}
+
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
 .then(stream => video.srcObject = stream);
 
@@ -211,7 +225,26 @@ def index():
         path=os.path.join(UPLOAD_FOLDER,fname)
         img.save(path)
 
-        conn=sqlite3.connect(DB_FILE)
+        # Prevent duplicate within 5 seconds
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+        SELECT timestamp FROM attendance 
+        WHERE emp_id=? 
+        ORDER BY id DESC LIMIT 1
+        """, (emp_id,))
+
+        last = cursor.fetchone()
+
+        if last:
+            last_time = datetime.strptime(last[0], "%Y-%m-%d %H:%M:%S")
+            now_time = datetime.now(IST).replace(tzinfo=None)
+
+            if (now_time - last_time).seconds < 5:
+                conn.close()
+                return render_template_string(HTML_PAGE, message="❌ Duplicate submission detected. Please wait.")
+
         conn.execute("INSERT INTO attendance VALUES(NULL,?,?,?,?,?,?,?)",
                      (name,emp_id,remarks,lat,lon,path,ts))
         conn.commit()
