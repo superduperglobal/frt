@@ -257,16 +257,44 @@ def index():
 # ------------------------------------------------------------------------------
 @app.route("/admin")
 def admin():
-    conn=sqlite3.connect(DB_FILE)
-    data=conn.execute("SELECT * FROM attendance ORDER BY id DESC").fetchall()
+    conn = sqlite3.connect(DB_FILE)
+    data = conn.execute("SELECT * FROM attendance ORDER BY id DESC").fetchall()
+
+    # Get unique dates
+    dates = sorted(list(set([d[7].split(" ")[0] for d in data])), reverse=True)
+
+    selected_date = request.args.get("date", dates[0] if dates else None)
+
+    filtered = [d for d in data if d[7].startswith(selected_date)]
+
+    kpi = len(filtered)
+
     conn.close()
 
     return render_template_string("""
-    <h2>📊 Records</h2>
-    <a href="/map_all">🗺 View All on Map</a> | <a href="/export">⬇ CSV</a><br><br>
+    <h2>📊 Attendance Dashboard</h2>
 
-    <table border=1>
-    <tr><th>Name</th><th>ID</th><th>Lat</th><th>Lon</th><th>Map</th><th>Image</th><th>Time</th></tr>
+    <form method="GET">
+        Date:
+        <select name="date" onchange="this.form.submit()">
+        {% for d in dates %}
+            <option value="{{d}}" {% if d==selected_date %}selected{% endif %}>{{d}}</option>
+        {% endfor %}
+        </select>
+    </form>
+
+    <h3>📌 Total Submissions: {{kpi}}</h3>
+
+    <a href="/map_all?date={{selected_date}}">🗺 View All on Map</a> |
+    <a href="/export">⬇ CSV</a>
+
+    <br><br>
+
+    <table border=1 cellpadding=5>
+    <tr>
+    <th>Name</th><th>ID</th><th>Lat</th><th>Lon</th>
+    <th>Map</th><th>Image</th><th>Time</th>
+    </tr>
 
     {% for r in data %}
     <tr>
@@ -274,42 +302,97 @@ def admin():
     <td>{{r[2]}}</td>
     <td>{{r[4]}}</td>
     <td>{{r[5]}}</td>
-    <td><a href="/map/{{r[4]}}/{{r[5]}}" target="_blank">View</a></td>
-    <td><img src="/uploads/{{r[6].split('/')[-1]}}" width="80"></td>
+
+    <td>
+        <button onclick="showMap({{r[4]}}, {{r[5]}})">View</button>
+    </td>
+
+    <td>
+        <img src="/uploads/{{r[6].split('/')[-1]}}" width="80">
+    </td>
+
     <td>{{r[7]}}</td>
     </tr>
     {% endfor %}
     </table>
-    """,data=data)
+
+    <!-- Modal -->
+    <div id="mapModal" style="display:none; position:fixed; top:10%; left:10%; width:80%; height:70%; background:white; border:2px solid black;">
+        <button onclick="closeMap()">Close</button>
+        <div id="map" style="height:90%;"></div>
+    </div>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <script>
+    var map;
+
+    function showMap(lat, lon){
+        document.getElementById("mapModal").style.display="block";
+
+        setTimeout(function(){
+            map = L.map('map').setView([lat, lon], 15);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            L.marker([lat, lon]).addTo(map);
+        }, 200);
+    }
+
+    function closeMap(){
+        document.getElementById("mapModal").style.display="none";
+        document.getElementById("map").innerHTML="";
+    }
+    </script>
+    """, data=filtered, dates=dates, selected_date=selected_date, kpi=kpi)
 
 # ------------------------------------------------------------------------------
 @app.route("/map_all")
 def map_all():
-    conn=sqlite3.connect(DB_FILE)
-    data=conn.execute("SELECT * FROM attendance").fetchall()
+    date = request.args.get("date")
+
+    conn = sqlite3.connect(DB_FILE)
+    data = conn.execute("SELECT * FROM attendance").fetchall()
     conn.close()
 
-    markers=[{"lat":r[4],"lon":r[5],"name":r[1]} for r in data]
+    if date:
+        data = [d for d in data if d[7].startswith(date)]
+
+    markers = [
+        {"lat": d[4], "lon": d[5], "name": d[1]}
+        for d in data
+    ]
 
     return render_template_string("""
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
 
-    <div id="map" style="height:500px;"></div>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+    <h3>🗺 Cluster Map View</h3>
+    <div id="map" style="height:600px;"></div>
 
     <script>
-    var map=L.map('map').setView([20,78],5);
+    var map = L.map('map').setView([20,78],5);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    var data={{markers|tojson}};
+    var markers = L.markerClusterGroup();
 
-    data.forEach(d=>{
-        L.marker([d.lat,d.lon]).addTo(map)
-        .bindPopup(d.name);
+    var data = {{markers|tojson}};
+
+    data.forEach(d => {
+        var marker = L.marker([d.lat, d.lon])
+            .bindPopup(d.name);
+        markers.addLayer(marker);
     });
+
+    map.addLayer(markers);
     </script>
-    """,markers=markers)
+    """, markers=markers)
 
 # ------------------------------------------------------------------------------
 @app.route("/map/<lat>/<lon>")
