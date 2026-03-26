@@ -15,6 +15,8 @@ import base64
 from io import BytesIO
 import cv2
 import numpy as np
+import mediapipe as mp
+import json
 
 UPLOAD_FOLDER = 'uploads'
 DB_FILE = 'attendance.db'
@@ -24,7 +26,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+mp_face = mp.solutions.face_detection
+face_detector = mp_face.FaceDetection(min_detection_confidence=0.6)
 
 # ------------------------------------------------------------------------------
 def init_db():
@@ -75,13 +78,25 @@ Remarks:<br><input type="text" name="remarks"><br><br>
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
 .then(stream => video.srcObject = stream);
 
-function capture() {
-    let canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video,0,0);
-    document.getElementById('image_data').value = canvas.toDataURL('image/jpeg');
-    alert("Captured");
+async function capture() {
+    let frames = [];
+
+    for (let i = 0; i < 3; i++) {
+        let canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        let ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+
+        frames.push(canvas.toDataURL('image/jpeg'));
+
+        await new Promise(r => setTimeout(r, 300)); // slight delay
+    }
+
+    document.getElementById('image_data').value = JSON.stringify(frames);
+
+    alert("Captured multiple frames");
 }
 
 navigator.geolocation.getCurrentPosition(
@@ -97,25 +112,47 @@ navigator.geolocation.getCurrentPosition(
 """
 
 # ------------------------------------------------------------------------------
-def validate_face(image):
-    img_np = np.array(image)
-    gray = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray,1.3,5)
+def validate_face_liveness(images):
+    """
+    images = list of PIL images (multiple frames)
+    """
 
-    if len(faces)==0:
-        return False,"No face detected"
+    face_positions = []
 
-    x,y,w,h = faces[0]
-    h_img,w_img = gray.shape
+    for img in images:
+        img_np = np.array(img)
+        rgb = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
 
-    cx,cy = x+w/2, y+h/2
-    if not (0.3*w_img<cx<0.7*w_img and 0.3*h_img<cy<0.7*h_img):
-        return False,"Face not centered"
+        results = face_detector.process(rgb)
 
-    if np.var(gray)<100:
-        return False,"Low clarity image"
+        if not results.detections:
+            return False, "❌ No face detected"
 
-    return True,"OK"
+        # Take first detection
+        det = results.detections[0]
+        bbox = det.location_data.relative_bounding_box
+
+        cx = bbox.xmin + bbox.width / 2
+        cy = bbox.ymin + bbox.height / 2
+
+        face_positions.append((cx, cy))
+
+    # 🔹 Liveness check: movement between frames
+    movement = 0
+    for i in range(len(face_positions)-1):
+        dx = abs(face_positions[i][0] - face_positions[i+1][0])
+        dy = abs(face_positions[i][1] - face_positions[i+1][1])
+        movement += dx + dy
+
+    if movement < 0.02:
+        return False, "❌ No movement detected (possible spoof)"
+
+    # 🔹 Center check (use last frame)
+    cx, cy = face_positions[-1]
+    if not (0.3 < cx < 0.7 and 0.3 < cy < 0.7):
+        return False, "❌ Face not centered"
+
+    return True, "OK"
 
 # ------------------------------------------------------------------------------
 def stamp_image(image, lat, lon, timestamp):
@@ -152,12 +189,21 @@ def index():
         lat,lon=round(float(lat),3),round(float(lon),3)
         ts=datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
-        img=Image.open(BytesIO(base64.b64decode(img_data.split(",")[1])))
-        img=ImageOps.exif_transpose(img)
+        frames = json.loads(img_data)
 
-        valid,m=validate_face(img)
+        images = []
+        for f in frames:
+            encoded = f.split(",")[1]
+            img = Image.open(BytesIO(base64.b64decode(encoded)))
+            img = ImageOps.exif_transpose(img)
+            images.append(img)
+
+        valid,m=validate_face_liveness(images)
         if not valid:
             return render_template_string(HTML_PAGE,message=m)
+
+        # Use LAST frame for saving
+        img = images[-1]
 
         img=stamp_image(img,lat,lon,ts)
 
