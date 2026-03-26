@@ -1,8 +1,8 @@
 """
 ================================================================================
-Version v1.4
-- Admin dashboard added
-- Image preview enabled
+Version v1.5
+- IST timezone fix
+- Map view using OpenStreetMap (Leaflet)
 ================================================================================
 """
 
@@ -11,6 +11,7 @@ from flask import Flask, request, render_template_string, send_from_directory
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import sqlite3
+import pytz
 
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
@@ -21,6 +22,8 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+
+IST = pytz.timezone('Asia/Kolkata')
 
 # ------------------------------------------------------------------------------
 def init_db():
@@ -85,8 +88,9 @@ ADMIN_PAGE = """
 <th>Remarks</th>
 <th>Lat</th>
 <th>Long</th>
+<th>Map</th>
 <th>Image</th>
-<th>Time</th>
+<th>Time (IST)</th>
 </tr>
 
 {% for row in data %}
@@ -96,13 +100,46 @@ ADMIN_PAGE = """
 <td>{{row[3]}}</td>
 <td>{{row[4]}}</td>
 <td>{{row[5]}}</td>
-<td>
-<img src="/uploads/{{row[6].split('/')[-1]}}" width="100">
-</td>
+<td><a href="/map/{{row[4]}}/{{row[5]}}" target="_blank">View Map</a></td>
+<td><img src="/uploads/{{row[6].split('/')[-1]}}" width="100"></td>
 <td>{{row[7]}}</td>
 </tr>
 {% endfor %}
 </table>
+"""
+
+# ------------------------------------------------------------------------------
+MAP_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Location Map</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+</head>
+<body>
+
+<h3>📍 Location View</h3>
+<div id="map" style="height:500px;"></div>
+
+<script>
+var lat = {{lat}};
+var lon = {{lon}};
+
+var map = L.map('map').setView([lat, lon], 15);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+}).addTo(map);
+
+L.marker([lat, lon]).addTo(map)
+    .bindPopup("Attendance Location")
+    .openPopup();
+</script>
+
+</body>
+</html>
 """
 
 # ------------------------------------------------------------------------------
@@ -123,24 +160,23 @@ def index():
             message = "Invalid image"
             return render_template_string(HTML_PAGE, message=message)
 
-        timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+        timestamp_str = datetime.now(IST).strftime("%Y%m%d%H%M%S")
         filename = secure_filename(f"{emp_id}_{timestamp_str}.jpg")
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
 
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO attendance
-            (name, emp_id, remarks, latitude, longitude, image_path, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)
         """, (name, emp_id, remarks, latitude, longitude, filepath, timestamp))
         conn.commit()
         conn.close()
 
-        message = f"✅ Attendance recorded for {name}"
+        message = f"✅ Attendance recorded for {name} at {timestamp}"
 
     return render_template_string(HTML_PAGE, message=message)
 
@@ -154,6 +190,11 @@ def admin():
     conn.close()
 
     return render_template_string(ADMIN_PAGE, data=data)
+
+# ------------------------------------------------------------------------------
+@app.route("/map/<lat>/<lon>")
+def map_view(lat, lon):
+    return render_template_string(MAP_PAGE, lat=lat, lon=lon)
 
 # ------------------------------------------------------------------------------
 @app.route('/uploads/<filename>')
