@@ -27,8 +27,17 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
 
-mp_face = mp.solutions.face_detection
-face_detector = mp_face.FaceDetection(min_detection_confidence=0.6)
+BaseOptions = mp.tasks.BaseOptions
+FaceDetector = mp.tasks.vision.FaceDetector
+FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+options = FaceDetectorOptions(
+    base_options=BaseOptions(model_asset_path='blaze_face_short_range.tflite'),
+    running_mode=VisionRunningMode.IMAGE,
+    min_detection_confidence=0.6)
+
+face_detector = FaceDetector.create_from_options(options)
 mp_lock = threading.Lock()
 
 # ------------------------------------------------------------------------------
@@ -151,20 +160,21 @@ def validate_face_liveness(images):
 
     for img in images:
         img_np = np.array(img.convert('RGB'))
-        rgb = img_np
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_np)
 
         with mp_lock:
-            results = face_detector.process(rgb)
+            results = face_detector.detect(mp_image)
 
         if not results.detections:
             return False, "❌ No face detected"
 
         # Take first detection
         det = results.detections[0]
-        bbox = det.location_data.relative_bounding_box
+        bbox = det.bounding_box
 
-        cx = bbox.xmin + bbox.width / 2
-        cy = bbox.ymin + bbox.height / 2
+        h_img, w_img, _ = img_np.shape
+        cx = (bbox.origin_x + bbox.width / 2) / w_img
+        cy = (bbox.origin_y + bbox.height / 2) / h_img
 
         face_positions.append((cx, cy))
 
