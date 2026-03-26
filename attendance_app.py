@@ -51,28 +51,39 @@ init_db()
 
 # ------------------------------------------------------------------------------
 HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body { font-family: Arial, sans-serif; padding: 10px; max-width: 600px; margin: auto; }
+    input[type=text], button { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
+    video { max-width: 100%; height: auto; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
 <h2>📍 Attendance Capture</h2>
 <p id="loc_status"></p>
 
 <form method="POST" onsubmit="disableSubmit()">
 
-Name:<br><input type="text" name="name" required><br><br>
-Employee ID:<br><input type="text" name="emp_id" required><br><br>
-Remarks:<br><input type="text" name="remarks"><br><br>
+Name:<br><input type="text" name="name" required><br>
+Employee ID:<br><input type="text" name="emp_id" required><br>
+Remarks:<br><input type="text" name="remarks"><br>
 
-<video id="video" width="250" autoplay></video><br>
-<button type="button" onclick="capture()">Capture</button><br><br>
+<video id="video" autoplay></video><br>
+<button type="button" onclick="capture()" style="background:#007BFF; color:white; border:none;">Capture</button>
 
 <input type="hidden" name="image_data" id="image_data">
 <input type="hidden" name="latitude" id="latitude">
 <input type="hidden" name="longitude" id="longitude">
 
-<button type="submit" id="submitBtn" disabled>Submit</button>
+<button type="submit" id="submitBtn" disabled style="background:#28A745; color:white; border:none;">Submit</button>
 
 <div id="msg_box" style="margin-top:10px;">
 {% if message %}
-<div style="padding:10px;
-            background:{{'green' if '✅' in message else 'red'}};
+<div style="padding:10px; border-radius:5px;
+            background:{{'#28A745' if '✅' in message else '#DC3545'}};
             color:white;">
 {{message}}
 {% if '❌' in message %}
@@ -87,6 +98,7 @@ Remarks:<br><input type="text" name="remarks"><br><br>
 <script>
 function disableSubmit() {
     document.getElementById("submitBtn").disabled = true;
+    document.getElementById("submitBtn").innerText = "Submitting...";
 }
 
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
@@ -117,12 +129,14 @@ navigator.geolocation.getCurrentPosition(
     pos => {
         latitude.value = pos.coords.latitude;
         longitude.value = pos.coords.longitude;
-        loc_status.innerText = "Location captured";
+        loc_status.innerText = "✅ Location captured";
         submitBtn.disabled = false;
     },
-    () => loc_status.innerText = "Location required"
+    () => loc_status.innerText = "❌ Location required"
 );
 </script>
+</body>
+</html>
 """
 
 # ------------------------------------------------------------------------------
@@ -263,73 +277,107 @@ def admin():
     # Get unique dates
     dates = sorted(list(set([d[7].split(" ")[0] for d in data])), reverse=True)
 
-    selected_date = request.args.get("date", dates[0] if dates else None)
+    selected_date = request.args.get("date", "All")
 
-    filtered = [d for d in data if d[7].startswith(selected_date)]
+    if selected_date != "All":
+        filtered = [d for d in data if d[7].startswith(selected_date)]
+    else:
+        filtered = data
 
     kpi = len(filtered)
 
     conn.close()
 
     return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 15px; background: #f4f6f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; text-align: center; }
+        .card h3 { margin: 0; font-size: 2em; color: #007BFF; }
+        .card p { margin: 5px 0 0; color: #555; font-size: 1.1em; }
+        select, button { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-size: 1em; }
+        a { text-decoration: none; color: white; background: #28a745; padding: 10px 15px; border-radius: 5px; display: inline-block; margin-top: 10px; }
+        a.csv { background: #17a2b8; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #007BFF; color: white; }
+        .table-container { overflow-x: auto; }
+        img { border-radius: 5px; }
+        button.view-btn { background: #ffc107; border: none; padding: 5px 10px; cursor: pointer; color: black; font-weight: bold; border-radius: 3px; }
+    </style>
+    </head>
+    <body>
     <h2>📊 Attendance Dashboard</h2>
 
-    <form method="GET">
-        Date:
+    <form method="GET" style="margin-bottom:20px;">
+        <label><b>Filter by Date:</b></label>
         <select name="date" onchange="this.form.submit()">
+            <option value="All" {% if selected_date == "All" %}selected{% endif %}>All Dates</option>
         {% for d in dates %}
             <option value="{{d}}" {% if d==selected_date %}selected{% endif %}>{{d}}</option>
         {% endfor %}
         </select>
     </form>
 
-    <h3>📌 Total Submissions: {{kpi}}</h3>
-
-    <a href="/map_all?date={{selected_date}}">🗺 View All on Map</a> |
-    <a href="/export">⬇ CSV</a>
-
-    <br><br>
-
-    <table border=1 cellpadding=5>
-    <tr>
-    <th>Name</th><th>ID</th><th>Lat</th><th>Lon</th>
-    <th>Map</th><th>Image</th><th>Time</th>
-    </tr>
-
-    {% for r in data %}
-    <tr>
-    <td>{{r[1]}}</td>
-    <td>{{r[2]}}</td>
-    <td>{{r[4]}}</td>
-    <td>{{r[5]}}</td>
-
-    <td>
-        <button onclick="showMap({{r[4]}}, {{r[5]}})">View</button>
-    </td>
-
-    <td>
-        <img src="/uploads/{{r[6].split('/')[-1]}}" width="80">
-    </td>
-
-    <td>{{r[7]}}</td>
-    </tr>
-    {% endfor %}
-    </table>
-
-    <!-- Modal -->
-    <div id="mapModal" style="display:none; position:fixed; top:10%; left:10%; width:80%; height:70%; background:white; border:2px solid black;">
-        <button onclick="closeMap()">Close</button>
-        <div id="map" style="height:90%;"></div>
+    <div class="card">
+        <h3>{{kpi}}</h3>
+        <p>📌 Total Submissions</p>
     </div>
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <div>
+        <a href="/map_all?date={{selected_date}}">🗺 View All on Map</a>
+        <a href="/export" class="csv">⬇ Download CSV</a>
+    </div>
+
+    <div class="table-container">
+        <table>
+        <tr>
+        <th>Name</th><th>ID</th><th>Lat</th><th>Lon</th>
+        <th>Map</th><th>Image</th><th>Time</th>
+        </tr>
+
+        {% for r in filtered %}
+        <tr>
+        <td>{{r[1]}}</td>
+        <td>{{r[2]}}</td>
+        <td>{{r[4]}}</td>
+        <td>{{r[5]}}</td>
+
+        <td>
+            <button class="view-btn" onclick="showMap({{r[4]}}, {{r[5]}})">View</button>
+        </td>
+
+        <td>
+            <img src="/uploads/{{r[6].split('/')[-1]}}" width="80">
+        </td>
+
+        <td>{{r[7]}}</td>
+        </tr>
+        {% endfor %}
+        </table>
+    </div>
+
+    <!-- Modal -->
+    <div id="mapModal" style="display:none; position:fixed; top:5%; left:5%; width:90%; height:80%; background:white; border:2px solid black; z-index:9999; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+        <button onclick="closeMap()" style="position:absolute; top:10px; right:10px; z-index:9999; background:red; color:white; border:none; padding:10px; cursor:pointer;">Close</button>
+        <div id="map" style="height:100%; width:100%;"></div>
+    </div>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
     var map;
 
     function showMap(lat, lon){
         document.getElementById("mapModal").style.display="block";
+
+        if(map) {
+            map.remove(); // clear old map inst to avoid leaflet re-initialization error
+        }
 
         setTimeout(function(){
             map = L.map('map').setView([lat, lon], 15);
@@ -345,18 +393,20 @@ def admin():
         document.getElementById("map").innerHTML="";
     }
     </script>
-    """, data=filtered, dates=dates, selected_date=selected_date, kpi=kpi)
+    </body>
+    </html>
+    """, filtered=filtered, dates=dates, selected_date=selected_date, kpi=kpi)
 
 # ------------------------------------------------------------------------------
 @app.route("/map_all")
 def map_all():
-    date = request.args.get("date")
+    date = request.args.get("date", "All")
 
     conn = sqlite3.connect(DB_FILE)
     data = conn.execute("SELECT * FROM attendance").fetchall()
     conn.close()
 
-    if date:
+    if date and date != "All":
         data = [d for d in data if d[7].startswith(date)]
 
     markers = [
@@ -365,34 +415,63 @@ def map_all():
     ]
 
     return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        .header { padding: 15px; background: #007BFF; color: white; display: flex; justify-content: space-between; align-items: center; }
+        h3 { margin: 0; }
+        a { color: white; text-decoration: none; font-weight: bold; background: rgba(255,255,255,0.2); padding: 5px 10px; border-radius: 5px; }
+    </style>
+    </head>
+    <body>
 
-    <h3>🗺 Cluster Map View</h3>
-    <div id="map" style="height:600px;"></div>
+    <div class="header">
+        <h3>🗺 Cluster Map View{% if date != 'All' %} ({{date}}){% else %} (All Data){% endif %}</h3>
+        <a href="/admin">🔙 Back to Admin</a>
+    </div>
+
+    <div id="map" style="height: calc(100vh - 54px); width: 100vw;"></div>
 
     <script>
     var map = L.map('map').setView([20,78],5);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-    var markers = L.markerClusterGroup();
+    var markers = L.markerClusterGroup({
+        maxClusterRadius: 50,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: true,
+        zoomToBoundsOnClick: true
+    });
 
     var data = {{markers|tojson}};
 
     data.forEach(d => {
         var marker = L.marker([parseFloat(d.lat), parseFloat(d.lon)])
-            .bindPopup(d.name);
+            .bindPopup("<b>" + d.name + "</b><br>Lat: " + d.lat + "<br>Lon: " + d.lon);
         markers.addLayer(marker);
     });
 
     map.addLayer(markers);
+
+    // Fit map bounds to show all markers if there are any
+    if (data.length > 0) {
+        var bounds = L.latLngBounds(data.map(d => [parseFloat(d.lat), parseFloat(d.lon)]));
+        map.fitBounds(bounds, {padding: [50, 50]});
+    }
     </script>
-    """, markers=markers)
+    </body>
+    </html>
+    """, markers=markers, date=date)
 
 # ------------------------------------------------------------------------------
 @app.route("/map/<lat>/<lon>")
