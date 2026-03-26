@@ -2,3 +2,5 @@ flask
 gunicorn
 pytz
 pillow
+opencv-python-headless
+numpy
