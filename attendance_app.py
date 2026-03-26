@@ -365,12 +365,12 @@ def map_all():
     ]
 
     return render_template_string("""
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
 
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
     <h3>🗺 Cluster Map View</h3>
     <div id="map" style="height:600px;"></div>
@@ -385,7 +385,7 @@ def map_all():
     var data = {{markers|tojson}};
 
     data.forEach(d => {
-        var marker = L.marker([d.lat, d.lon])
+        var marker = L.marker([parseFloat(d.lat), parseFloat(d.lon)])
             .bindPopup(d.name);
         markers.addLayer(marker);
     });
