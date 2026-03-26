@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import json
+import threading
 
 UPLOAD_FOLDER = 'uploads'
 DB_FILE = 'attendance.db'
@@ -28,6 +29,7 @@ app = Flask(__name__)
 
 mp_face = mp.solutions.face_detection
 face_detector = mp_face.FaceDetection(min_detection_confidence=0.6)
+mp_lock = threading.Lock()
 
 # ------------------------------------------------------------------------------
 def init_db():
@@ -148,10 +150,11 @@ def validate_face_liveness(images):
     face_positions = []
 
     for img in images:
-        img_np = np.array(img)
+        img_np = np.array(img.convert('RGB'))
         rgb = img_np
 
-        results = face_detector.process(rgb)
+        with mp_lock:
+            results = face_detector.process(rgb)
 
         if not results.detections:
             return False, "❌ No face detected"
