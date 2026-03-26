@@ -149,7 +149,7 @@ def validate_face_liveness(images):
 
     for img in images:
         img_np = np.array(img)
-        rgb = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+        rgb = img_np
 
         results = face_detector.process(rgb)
 
