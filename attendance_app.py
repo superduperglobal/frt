@@ -1,18 +1,16 @@
 """
 ================================================================================
-Version v2.7.1 (Render Stable Final)
+Version v2.8 (Full Merge - Admin + UX + Validation + No Regression)
 ================================================================================
-CHANGES:
-1. ❌ Removed MediaPipe (Render libGL issue)
-2. ✅ Replaced with OpenCV Haar Cascade
-3. ✅ Fixed Flask return error (always returns response)
-4. ✅ Fixed success/error UI (green/red message)
-5. ✅ Fixed duplicate submissions
-6. ✅ Admin:
-   - Popup map per row
-   - Cluster map
-   - Date filter + KPI
-7. ✅ CSV export header fixed
+INCLUDES:
+✔ Admin dashboard (table + KPI + date filter)
+✔ Row-level popup map
+✔ Full map clustering
+✔ CSV export
+✔ Face validation (multi-frame + movement + center)
+✔ Frontend safeguards (no empty submit, no reset)
+✔ Clear success / failure UX
+✔ Render compatible (no mediapipe)
 ================================================================================
 """
 
@@ -25,7 +23,6 @@ from io import BytesIO
 import cv2
 import numpy as np
 
-# ------------------------------------------------------------------------------
 UPLOAD_FOLDER = 'uploads'
 DB_FILE = 'attendance.db'
 IST = pytz.timezone('Asia/Kolkata')
@@ -35,7 +32,6 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app = Flask(__name__)
 
 # ------------------------------------------------------------------------------
-# Face detector (OpenCV)
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
@@ -66,11 +62,16 @@ HTML_PAGE = """
 
 <p id="loc_status"></p>
 
-<form method="POST" onsubmit="disableSubmit()">
+<form method="POST" onsubmit="return validateBeforeSubmit()">
 
-Name:<br><input type="text" name="name" required><br><br>
-Employee ID:<br><input type="text" name="emp_id" required><br><br>
-Remarks:<br><input type="text" name="remarks"><br><br>
+Name:<br>
+<input type="text" name="name" value="{{request.form.get('name','')}}" required><br><br>
+
+Employee ID:<br>
+<input type="text" name="emp_id" value="{{request.form.get('emp_id','')}}" required><br><br>
+
+Remarks:<br>
+<input type="text" name="remarks" value="{{request.form.get('remarks','')}}"><br><br>
 
 <video id="video" width="250" autoplay></video><br>
 <button type="button" onclick="capture()">Capture</button><br><br>
@@ -88,7 +89,7 @@ background:{{'green' if '✅' in message else 'red'}};
 color:white;">
 {{message}}
 {% if '❌' in message %}
-<br>👉 Retry: keep face centered & move slightly
+<br>👉 Ensure face is visible, centered & move slightly
 {% endif %}
 </div>
 {% endif %}
@@ -102,6 +103,7 @@ navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
 
 async function capture() {
     let frames = [];
+
     for (let i=0;i<3;i++){
         let c=document.createElement('canvas');
         c.width=video.videoWidth;
@@ -110,8 +112,19 @@ async function capture() {
         frames.push(c.toDataURL('image/jpeg'));
         await new Promise(r=>setTimeout(r,300));
     }
+
     image_data.value = JSON.stringify(frames);
-    alert("Captured");
+    loc_status.innerText = "📷 Image captured. Ready to submit.";
+}
+
+function validateBeforeSubmit(){
+    if(!image_data.value){
+        alert("❌ Please capture image before submitting");
+        return false;
+    }
+    submitBtn.innerText="Validating...";
+    submitBtn.disabled=true;
+    return true;
 }
 
 navigator.geolocation.getCurrentPosition(
@@ -128,10 +141,6 @@ navigator.geolocation.getCurrentPosition(
     },
     ()=>loc_status.innerText="❌ Location required"
 );
-
-function disableSubmit(){
-    submitBtn.disabled=true;
-}
 </script>
 """
 
@@ -200,7 +209,6 @@ def index():
             if not lat or not lon or not img_data:
                 return render_template_string(HTML_PAGE,message="❌ All inputs required")
 
-            # Duplicate guard
             conn=sqlite3.connect(DB_FILE)
             cur=conn.cursor()
             cur.execute("SELECT timestamp FROM attendance WHERE emp_id=? ORDER BY id DESC LIMIT 1",(emp_id,))
@@ -224,9 +232,9 @@ def index():
                 img=ImageOps.exif_transpose(img)
                 images.append(img)
 
-            valid,msg=validate_face_liveness(images)
+            valid,msg_val=validate_face_liveness(images)
             if not valid:
-                return render_template_string(HTML_PAGE,message=msg)
+                return render_template_string(HTML_PAGE,message=msg_val)
 
             img=stamp_image(images[-1],lat,lon,ts)
 
