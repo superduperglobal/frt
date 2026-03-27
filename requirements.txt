@@ -1,4 +1,5 @@
 streamlit
+gunicorn
 polars
 fastexcel
 psutil
