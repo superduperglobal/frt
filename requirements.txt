@@ -1,11 +1,6 @@
-streamlit
-gunicorn
-polars
-fastexcel
-psutil
-flask
+flask==3.0.3
+gunicorn==21.2.0
 pytz
 pillow
-opencv-python
-numpy
-mediapipe
+numpy==1.26.4
+opencv-python-headless==4.9.0.80
