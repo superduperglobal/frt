@@ -18,6 +18,7 @@ import numpy as np
 import mediapipe as mp
 import json
 import threading
+import urllib.request
 
 UPLOAD_FOLDER = 'uploads'
 DB_FILE = 'attendance.db'
@@ -32,8 +33,16 @@ FaceDetector = mp.tasks.vision.FaceDetector
 FaceDetectorOptions = mp.tasks.vision.FaceDetectorOptions
 VisionRunningMode = mp.tasks.vision.RunningMode
 
+MODEL_PATH = 'blaze_face_short_range.tflite'
+if not os.path.exists(MODEL_PATH):
+    print(f"Downloading {MODEL_PATH} for deployment...")
+    urllib.request.urlretrieve(
+        "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+        MODEL_PATH
+    )
+
 options = FaceDetectorOptions(
-    base_options=BaseOptions(model_asset_path='blaze_face_short_range.tflite'),
+    base_options=BaseOptions(model_asset_path=MODEL_PATH),
     running_mode=VisionRunningMode.IMAGE,
     min_detection_confidence=0.6)
 
